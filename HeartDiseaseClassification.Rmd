@@ -1,0 +1,117 @@
+---
+title: 'Classification: Predicting Heart Disease'
+author: "Sujay Talanki"
+date: "8/1/2022"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+***
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+library(readxl)
+library(DescTools)
+library(boot)
+library(ISLR2)
+library(tidyverse)
+library(splines)
+```
+
+This project uses several different classification methods to predict
+whether or not a patient has heart disease.
+
+
+Loading the dataset:
+
+```{r warning = FALSE, message = FALSE}
+heart <- read.csv("C:/Users/talan/Downloads/heart.csv")
+```
+
+I will split the data into a training set and a test set:
+
+```{r, warning = FALSE}
+set.seed(1)
+n = nrow(heart)
+
+#Creating the training set
+train = sample(1:n, size = n/2)
+train.set = heart[train, ]
+
+#Creating the test set
+test = (-train)
+test.set = heart[test, ]
+```
+
+* __(a)__: Using $\textbf{Logistic Regression}$:
+  ```{r}
+  #Creating the logistic regression model
+  logistic.fit = glm(target ~ ., data = train.set, family = "binomial")
+  
+  #Using the training model on the test set
+  probability = predict(logistic.fit, test.set, type = "response");
+  prediction = rep(0, 1)
+  prediction[probability > 0.5] = 1
+  test_pred <- ifelse(predict(logistic.fit, newdata = test.set,
+  type = "response") > 0.5, 1, 0)
+  test.accuracy = (mean(test_pred == test.set$target))*100
+  ```
+  The test accuracy is $`r round(test.accuracy, 2)`$%.
+
+* __(b)__: Using $\textbf{Linear Discriminant Analysis (LDA)}$: 
+  ```{r echo = FALSE, warning = FALSE, message = FALSE}
+  library(MASS)
+  require(ISLR); require(tidyverse); require(ggthemes)
+  require(caret); require(e1071)
+  ```
+  ```{r, warning = FALSE, message = FALSE}
+  lda.fit = lda(target ~ ., data = train.set)
+  pred <- predict(lda.fit, test.set)
+  test.accuracy = (mean(pred$class == test.set$target))*100
+  ```
+  
+  The test accuracy of LDA is ~ $`r round(test.accuracy, 2)`$%.
+  
+* __(c)__: Using $\textbf{Quadratic Discriminant Analysis (QDA)}$:
+  ```{r, warning = FALSE, message = FALSE}
+  qda.fit = qda(target ~ ., data = train.set)
+  pred <- predict(qda.fit, test.set)
+  test.accuracy = (mean(pred$class == test.set$target))*100
+  ```
+  
+  Thus, the test accuracy of QDA is ~ $`r round(test.accuracy, 2)`$%.
+
+* __(d)__: Using a $\textbf{Support Vector Machine (SVM)}$. This will be a linear
+  SVM and I will tune the model in order to find the best cost.
+  ```{r}
+  #Finding the optimal cost
+  tune.fit = tune(svm, target ~ ., data = train.set, 
+  kernel = "linear", ranges = list(cost = seq(0.01, 10, 0.5)))
+  tune.fit
+  ```
+
+  From the output, the test accuracy is 86.73%.
+  
+* __(e)__: Using a $\textbf{Support Vector Machine (SVM)}$. This will be a radial
+  SVM and I will tune the model in order to find the best cost.
+  ```{r}
+  #Finding the optimal cost
+  tune.fit = tune(svm, target ~ ., data = train.set, 
+  kernel = "radial", ranges = list(cost = seq(0.01, 10, 0.5)))
+  tune.fit
+  ```
+
+  From the output, the test accuracy is 85.63%.
+  
+  
+$\textbf{Conclusion}$: Outside of the QDA, most of the classification methods 
+result in a test accuracy of around 84% - 86%.
+  
+  
+
+
