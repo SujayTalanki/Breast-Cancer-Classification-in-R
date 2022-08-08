@@ -21,6 +21,7 @@ library(boot)
 library(ISLR2)
 library(tidyverse)
 library(splines)
+library(e1071)
 ```
 
 This project uses several different classification methods to predict
@@ -33,35 +34,58 @@ Loading the dataset:
 heart <- read.csv("C:/Users/talan/Downloads/heart.csv")
 ```
 
-I will split the data into a training set and a test set:
+I created a generic function below to calculate the average
+K-fold Cross validation accuracy (5 trials of K folds) of each model. 
+This model takes in a function (the function for each model will be different), 
+the dataset, the target column we are trying to predict (these two parameters 
+will stay constant), and the value of K (the number of test splits):
 
 ```{r, warning = FALSE}
-set.seed(1)
-n = nrow(heart)
-
-#Creating the training set
-train = sample(1:n, size = n/2)
-train.set = heart[train, ]
-
-#Creating the test set
-test = (-train)
-test.set = heart[test, ]
+CalculateCVAccuracy = function(FUN, dataframe, target, K) {
+  #Vector that stores each K-fold CV score for each trial
+  cvs = rep(0,5)
+  for (i in 1:5) {
+    set.seed(1 + i)
+    n = nrow(dataframe)
+    vad.index = sample(rep(1:K,n/K))
+    accuracy = 0
+    #For loop that computes K-fold CV score
+    for (k in 1:K) {
+      set.seed(10+k)
+      train = dataframe[vad.index!=k, ]
+      test = dataframe[vad.index==k, ]
+      nk = sum(vad.index==k)
+      accuracyk = FUN(dataframe, train, test, target)
+      accuracy = accuracy + (nk/n) * accuracyk
+    }
+    cvs[i] = accuracy
+  }
+  #Returns the average K-fold CV score
+  return (mean(cvs))
+}
 ```
 
+\newpage
 * __(a)__: Using $\textbf{Logistic Regression}$:
-  ```{r}
-  #Creating the logistic regression model
-  logistic.fit = glm(target ~ ., data = train.set, family = "binomial")
+  ```{r, warning = FALSE}
+  #Function to simulate logistic regression
+  logisticRegression = function(dataframe, train.set, test.set, target) {
+    #Creating the logistic regression model
+    logistic.fit = glm(target ~ ., data = train.set, family = "binomial")
   
-  #Using the training model on the test set
-  probability = predict(logistic.fit, test.set, type = "response");
-  prediction = rep(0, 1)
-  prediction[probability > 0.5] = 1
-  test_pred <- ifelse(predict(logistic.fit, newdata = test.set,
-  type = "response") > 0.5, 1, 0)
-  test.accuracy = (mean(test_pred == test.set$target))*100
+    #Using the training model on the test set
+    probability = predict(logistic.fit, test.set, type = "response");
+    prediction = rep(0, 1)
+    prediction[probability > 0.5] = 1
+    test_pred <- ifelse(predict(logistic.fit, newdata = test.set,
+    type = "response") > 0.5, 1, 0)
+    test.accuracy = (mean(test_pred == test.set$target))*100
+    return (test.accuracy)
+  }
+  CVAccuracy = CalculateCVAccuracy(logisticRegression, heart, heart$target, 5)
   ```
-  The test accuracy is $`r round(test.accuracy, 2)`$%.
+  The average 5-fold Cross-validation accuracy of the 
+  logistic regression model is ~ $`r ceiling(CVAccuracy)`$%.
 
 * __(b)__: Using $\textbf{Linear Discriminant Analysis (LDA)}$: 
   ```{r echo = FALSE, warning = FALSE, message = FALSE}
@@ -70,47 +94,115 @@ test.set = heart[test, ]
   require(caret); require(e1071)
   ```
   ```{r, warning = FALSE, message = FALSE}
-  lda.fit = lda(target ~ ., data = train.set)
-  pred <- predict(lda.fit, test.set)
-  test.accuracy = (mean(pred$class == test.set$target))*100
+  #Function that trains the LDA model
+  LDA = function(dataframe, train.set, test.set, target) {
+    lda.fit = lda(target ~ ., data = train.set)
+    pred <- predict(lda.fit, test.set)
+    test.accuracy = (mean(pred$class == test.set$target))*100
+    return (test.accuracy)
+  }
+  CVAccuracy = CalculateCVAccuracy(LDA, heart, heart$target, 5)
   ```
-  
-  The test accuracy of LDA is ~ $`r round(test.accuracy, 2)`$%.
+  The average 5-fold Cross-validation accuracy of the 
+  LDA model is ~ $`r ceiling(CVAccuracy)`$%.
   
 * __(c)__: Using $\textbf{Quadratic Discriminant Analysis (QDA)}$:
   ```{r, warning = FALSE, message = FALSE}
-  qda.fit = qda(target ~ ., data = train.set)
-  pred <- predict(qda.fit, test.set)
-  test.accuracy = (mean(pred$class == test.set$target))*100
+  #Function that trains the QDA model
+  QDA = function(dataframe, train.set, test.set, target) {
+    qda.fit = qda(target ~ ., data = train.set)
+    pred <- predict(qda.fit, test.set)
+    test.accuracy = (mean(pred$class == test.set$target))*100
+    return (test.accuracy)
+  }
+  CVAccuracy = CalculateCVAccuracy(QDA, heart, heart$target, 5)
+  ```
+  The average 5-fold Cross-validation accuracy of the QDA model is ~
+  $`r ceiling(CVAccuracy)`$%.  
+  
+  
+This next part uses the Support Vector Machine (SVM) classifier. As it
+is more algorithmically intensive, I will compute a 2-fold Cross Validation
+accuracy for each classifier.
+
+\newpage
+* __(d)__: Using a $\textbf{Support Vector Machine (SVM)}$. This will be a
+  $\textbf{linear}$ SVM and I will tune the model in order to find the best cost.
+  
+  ```{r, echo = FALSE}
+  heart$target <- as.factor(heart$target)
   ```
   
-  Thus, the test accuracy of QDA is ~ $`r round(test.accuracy, 2)`$%.
+  ```{r, warning = FALSE}
+  #Function that trains the SVM linear model
+  SVMlinear = function(dataframe, train.set, test.set, target) {
+    #Finding the optimal cost
+    tune.fit = tune(svm, target ~ ., data = train.set,
+    kernel = "linear", type = 'C-classification', ranges = list(cost =
+    seq(0.01, 10, 0.5)))
+    best.fit = tune.fit$best.model
 
-* __(d)__: Using a $\textbf{Support Vector Machine (SVM)}$. This will be a linear
-  SVM and I will tune the model in order to find the best cost.
-  ```{r}
-  #Finding the optimal cost
-  tune.fit = tune(svm, target ~ ., data = train.set, 
-  kernel = "linear", ranges = list(cost = seq(0.01, 10, 0.5)))
-  tune.fit
+    #Finding test accuracy
+    test_pred = predict(best.fit, test.set)
+    test.accuracy = (mean(test_pred == test.set$target))*100
+    return (test.accuracy)
+  }
+  CVAccuracy = CalculateCVAccuracy(SVMlinear, heart, heart$target, 2)
   ```
-
-  From the output, the test accuracy is 86.73%.
   
-* __(e)__: Using a $\textbf{Support Vector Machine (SVM)}$. This will be a radial
-  SVM and I will tune the model in order to find the best cost.
-  ```{r}
-  #Finding the optimal cost
-  tune.fit = tune(svm, target ~ ., data = train.set, 
-  kernel = "radial", ranges = list(cost = seq(0.01, 10, 0.5)))
-  tune.fit
+  The average 2-fold Cross-validation accuracy of the SVM linear model is ~
+  $`r ceiling(CVAccuracy)`$%.
+  
+* __(e)__: Using a $\textbf{Support Vector Machine (SVM)}$. This will be a
+  $\textbf{radial}$ SVM and I will tune the model in order to find the best cost.
+  ```{r, warning = FALSE}
+  #Function that trains the SVM radial model
+  SVMRadial = function(dataframe, train.set, test.set, target) {
+    #Finding the optimal cost
+    tune.fit = tune(svm, target ~ ., data = train.set,
+    kernel = "radial", type = 'C-classification',
+    ranges = list(cost = seq(0.01, 10, 0.5)))
+    best.fit = tune.fit$best.model
+
+    #Finding test accuracy
+    test_pred = predict(best.fit, test.set)
+    test.accuracy = (mean(test_pred == test.set$target))*100
+    return (test.accuracy)
+  }
+  CVAccuracy = CalculateCVAccuracy(SVMRadial, heart, heart$target, 2)
   ```
+  
+  The average 2-fold Cross-validation accuracy of the SVM radial model is ~
+  $`r ceiling(CVAccuracy)`$%.
 
-  From the output, the test accuracy is 85.63%.
+\newpage
+* __(f)__: Using a $\textbf{Support Vector Machine (SVM)}$. This will be a
+  $\textbf{polynomial}$ SVM and I will tune the model in order to find the best cost.
+  ```{r, warning = FALSE}
+  #Function that trains the SVM polynomial model
+  SVMPolynomial = function(dataframe, train.set, test.set, target) {
+    #Finding the optimal cost
+    tune.fit = tune(svm, target ~ ., data = train.set,
+    kernel = "polynomial", type = 'C-classification',
+    ranges = list(cost = seq(0.01, 10, 0.5)))
+    best.fit = tune.fit$best.model
+
+    #Finding test accuracy
+    test_pred = predict(best.fit, test.set)
+    test.accuracy = (mean(test_pred == test.set$target))*100
+    return (test.accuracy)
+  }
+  CVAccuracy = CalculateCVAccuracy(SVMPolynomial, heart, heart$target, 2)
+  ```
   
+  The average 2-fold Cross-validation accuracy of the SVM polynomial model is ~
+  $`r ceiling(CVAccuracy)`$%.
   
-$\textbf{Conclusion}$: Outside of the QDA, most of the classification methods 
-result in a test accuracy of around 84% - 86%.
+
+$\textbf{Conclusion}$: Most of the classification methods result in a 
+CV test accuracy of around 80% - 82%. It appears that the Logistic Regression,
+LDA, SVM Linear, and SVM Radial models predict heart disease the best, but
+all classifiers generally work equally as well.
   
   
 
